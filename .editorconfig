@@ -1,0 +1,39 @@
+[*.json]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+max_line_length = 80
+trim_trailing_whitespace = true
+
+[.*rc]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+max_line_length = 80
+trim_trailing_whitespace = true
+
+[*.js]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+max_line_length = 80
+trim_trailing_whitespace = true
+
+[*.yml]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+max_line_length = 80
+trim_trailing_whitespace = true
+
+[scripts/*]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+max_line_length = 80
+trim_trailing_whitespace = true

@@ -1,0 +1,48 @@
+{
+  "name": "noble-dfu",
+  "version": "1.0.0",
+  "description": "Update device firmware via Nordic's DFU protocols using noble",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "rimraf lib && babel src -d lib",
+    "prepare": "npm run build",
+    "example": "node examples/secure_dfu_node.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "precommit": "lint-staged"
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://git@gitlab2.polidea.com:23/TimeularZei/noble-dfu.git"
+  },
+  "keywords": [
+    "noble",
+    "dfu",
+    "nordic",
+    "firmware",
+    "ble",
+    "bluetooth"
+  ],
+  "author": "Piotrek Dubiel <piotr.dubiel@polidea.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "babel-cli": "^6.3.17",
+    "babel-preset-es2015": "^6.24.1",
+    "babel-preset-stage-0": "^6.24.1",
+    "babel-register": "^6.26.0",
+    "crc-32": "^1.0.2",
+    "gulp": "^3.9.1",
+    "gulp-eslint": "^3.0.1",
+    "husky": "^0.14.3",
+    "jszip": "^3.1.3",
+    "lint-staged": "^4.2.3",
+    "noble": "^1.8.1",
+    "prettier": "^1.7.4",
+    "progress": "^2.0.0"
+  },
+  "lint-staged": {
+    "{src, examples}/**/*.js": [
+      "prettier --write",
+      "git add"
+    ]
+  }
+}
