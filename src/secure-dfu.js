@@ -360,7 +360,7 @@ export class SecureDFU extends EventEmitter {
     const buffer = new Buffer(packet)
 
     return new Promise((resolve, reject) => {
-      this.packetChar.write(buffer, true, error => {
+      this.packetChar.write(buffer, false, error => {
         if (error) return reject(error)
         resolve()
       })

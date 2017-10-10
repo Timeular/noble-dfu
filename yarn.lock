@@ -2488,9 +2488,9 @@ natural-compare@^1.4.0:
   version "1.4.0"
   resolved "https://registry.yarnpkg.com/natural-compare/-/natural-compare-1.4.0.tgz#4abebfeed7541f2c27acfb29bdbbd15c8d5ba4f7"
 
-noble@^1.8.1:
+"noble@git+https://gitlab2.polidea.com/TimeularZeiDependencies/noble#78263a5898aa4890acbe2726b1c3304419d34307":
   version "1.8.1"
-  resolved "https://registry.yarnpkg.com/noble/-/noble-1.8.1.tgz#efe880812b7251afaaadb4fe83753c1302a673f6"
+  resolved "git+https://gitlab2.polidea.com/TimeularZeiDependencies/noble#78263a5898aa4890acbe2726b1c3304419d34307"
   dependencies:
     debug "~2.2.0"
   optionalDependencies:
@@ -3351,6 +3351,13 @@ unique-stream@^1.0.0:
 usb@^1.1.0:
   version "1.2.0"
   resolved "https://registry.yarnpkg.com/usb/-/usb-1.2.0.tgz#ab72d9786a047068919a024d08c7a1c5b1e60f47"
+  dependencies:
+    nan "^2.4.0"
+    node-pre-gyp "^0.6.30"
+
+"usb@git+https://gitlab2.polidea.com/TimeularZeiDependencies/node-usb#5c436c8e9416ce75b18e02f8af665d4fa327da66":
+  version "1.2.2"
+  resolved "git+https://gitlab2.polidea.com/TimeularZeiDependencies/node-usb#5c436c8e9416ce75b18e02f8af665d4fa327da66"
   dependencies:
     nan "^2.4.0"
     node-pre-gyp "^0.6.30"
