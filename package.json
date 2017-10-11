@@ -5,10 +5,9 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "rimraf lib && babel src -d lib",
-    "prepare": "npm run build",
     "example": "node examples/secure_dfu_node.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "precommit": "lint-staged"
+    "precommit": "npm run build && lint-staged"
   },
   "repository": {
     "type": "git",
@@ -40,7 +39,7 @@
     "progress": "^2.0.0"
   },
   "lint-staged": {
-    "{src, examples}/**/*.js": [
+    "{src,examples}/**/*.js": [
       "prettier --write",
       "git add"
     ]

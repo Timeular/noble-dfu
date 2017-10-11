@@ -68,6 +68,10 @@ export class SecureDFU extends EventEmitter {
     this.emit("log", { message })
   }
 
+  error(err) {
+    this.emit("error", err)
+  }
+
   progress(bytes) {
     this.emit("progress", {
       object: "unknown",
@@ -248,7 +252,7 @@ export class SecureDFU extends EventEmitter {
       }
 
       if (error) {
-        this.log(`notify: ${error}`)
+        this.error(error)
         this.notifyFns[operation].reject(error)
       }
       delete this.notifyFns[operation]
@@ -275,7 +279,7 @@ export class SecureDFU extends EventEmitter {
         resolve: resolve,
         reject: reject,
       }
-      characteristic.write(new Buffer(value), true)
+      characteristic.write(new Buffer(value), false)
     })
   }
 
@@ -330,7 +334,6 @@ export class SecureDFU extends EventEmitter {
         let crc = response.getInt32(4, LITTLE_ENDIAN)
         let transferred = response.getUint32(0, LITTLE_ENDIAN)
         let data = buffer.slice(0, transferred)
-        console.log("CRC", crc, transferred, data)
 
         if (this.checkCrc(data, crc)) {
           this.log(`written ${transferred} bytes`)
@@ -356,7 +359,6 @@ export class SecureDFU extends EventEmitter {
 
     const buffer = new Buffer(packet)
 
-    console.log("transferData start", buffer, offset, start, end)
     return new Promise((resolve, reject) => {
       this.packetChar.write(buffer, true, error => {
         if (error) return reject(error)
