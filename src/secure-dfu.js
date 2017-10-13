@@ -279,7 +279,7 @@ export class SecureDFU extends EventEmitter {
         resolve: resolve,
         reject: reject,
       }
-      characteristic.write(new Buffer(value), false)
+      writeCharacterisitic(characteristic, new Buffer(value), false)
     })
   }
 
@@ -359,12 +359,7 @@ export class SecureDFU extends EventEmitter {
 
     const buffer = new Buffer(packet)
 
-    return new Promise((resolve, reject) => {
-      this.packetChar.write(buffer, true, error => {
-        if (error) return reject(error)
-        resolve()
-      })
-    }).then(() => {
+    return writeCharacterisitic(this.packetChar, buffer).then(() => {
       this.progress(offset + end)
 
       if (end < data.byteLength) {
@@ -382,20 +377,6 @@ export class SecureDFU extends EventEmitter {
     return crc === this.crc32(new Uint8Array(buffer))
   }
 }
-
-// function removeEventListener(type, callback) {
-//   if (!this.events[type]) return;
-//   let i = this.events[type].indexOf(callback);
-//   if (i >= 0) this.events[type].splice(i, 1);
-//   if (this.events[type].length === 0) delete this.events[type];
-// }
-// function dispatchEvent(event) {
-//   if (!this.events[event.type]) return;
-//   event.target = this;
-//   this.events[event.type].forEach(callback => {
-//     if (typeof callback === "function") callback(event);
-//   });
-// }
 
 function bufferToDataView(buffer) {
   // Buffer to ArrayBuffer
@@ -419,4 +400,17 @@ function getCanonicalUUID(uuid) {
       .splice(1)
       .join("-")
   return uuid
+}
+
+const isWindows = /^win32/.test(process.platform)
+
+const defaultWithoutResponse = !isWindows
+
+function writeCharacterisitic(characteristic, buffer, withoutResponse = defaultWithoutResponse) {
+  return new Promise((resolve, reject) => {
+    characteristic.write(buffer, withoutResponse, error => {
+      if (error) return reject(error)
+      resolve()
+    })
+  })
 }
