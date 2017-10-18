@@ -62,6 +62,7 @@ export class SecureDFU extends EventEmitter {
     this.notifyFns = {}
     this.controlChar = null
     this.packetChar = null
+    this.isAborted = false
   }
 
   log(message) {
@@ -81,6 +82,8 @@ export class SecureDFU extends EventEmitter {
   }
 
   update(device, init, firmware) {
+    this.isAborted = false
+
     if (!device) throw new Error("Device not specified")
     if (!init) throw new Error("Init not specified")
     if (!firmware) throw new Error("Firmware not specified")
@@ -96,13 +99,22 @@ export class SecureDFU extends EventEmitter {
       })
       .then(() => {
         this.log("complete, disconnecting...")
-        return new Promise(resolve => {
+        return new Promise((resolve, reject) => {
+          device.disconnect(error => {
+            if (error) {
+              reject(error)
+            }
+          })
           device.once("disconnect", () => {
             this.log("disconnect")
             resolve()
           })
         })
       })
+  }
+
+  abort() {
+    this.isAborted = true
   }
 
   connect(device) {
@@ -279,7 +291,7 @@ export class SecureDFU extends EventEmitter {
         resolve: resolve,
         reject: reject,
       }
-      writeCharacterisitic(characteristic, new Buffer(value), false)
+      writeCharacteristic(characteristic, new Buffer(value), false)
     })
   }
 
@@ -292,6 +304,8 @@ export class SecureDFU extends EventEmitter {
   }
 
   transfer(buffer, type, selectType, createType) {
+    this.bailOnAbort()
+
     return this.sendControl(selectType).then(response => {
       let maxSize = response.getUint32(0, LITTLE_ENDIAN)
       let offset = response.getUint32(4, LITTLE_ENDIAN)
@@ -316,6 +330,8 @@ export class SecureDFU extends EventEmitter {
   }
 
   transferObject(buffer, createType, maxSize, offset) {
+    this.bailOnAbort()
+
     let start = offset - offset % maxSize
     let end = Math.min(start + maxSize, buffer.byteLength)
 
@@ -340,7 +356,7 @@ export class SecureDFU extends EventEmitter {
           offset = transferred
           return this.sendControl(OPERATIONS.EXECUTE)
         } else {
-          this.log("object failed to validate")
+          this.error("object failed to validate")
         }
       })
       .then(() => {
@@ -359,7 +375,7 @@ export class SecureDFU extends EventEmitter {
 
     const buffer = new Buffer(packet)
 
-    return writeCharacterisitic(this.packetChar, buffer).then(() => {
+    return writeCharacteristic(this.packetChar, buffer).then(() => {
       this.progress(offset + end)
 
       if (end < data.byteLength) {
@@ -375,6 +391,12 @@ export class SecureDFU extends EventEmitter {
     }
 
     return crc === this.crc32(new Uint8Array(buffer))
+  }
+
+  bailOnAbort() {
+    if (this.isAborted) {
+      throw new Error("aborted")
+    }
   }
 }
 
@@ -406,7 +428,7 @@ const isWindows = /^win32/.test(process.platform)
 
 const defaultWithoutResponse = !isWindows
 
-function writeCharacterisitic(characteristic, buffer, withoutResponse = defaultWithoutResponse) {
+function writeCharacteristic(characteristic, buffer, withoutResponse = defaultWithoutResponse) {
   return new Promise((resolve, reject) => {
     characteristic.write(buffer, withoutResponse, error => {
       if (error) return reject(error)

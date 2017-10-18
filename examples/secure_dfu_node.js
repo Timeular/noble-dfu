@@ -98,6 +98,7 @@ function updateFirmware(dfu, dfuPackage, manifest, device, type) {
         width: 20,
         total: data.byteLength,
       })
+
       return dfu.update(device, init, data)
     })
 }

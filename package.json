@@ -4,10 +4,10 @@
   "description": "Update device firmware via Nordic's DFU protocols using noble",
   "main": "lib/index.js",
   "scripts": {
-    "build": "rimraf lib && babel src -d lib",
+    "build": "rimraf lib; babel src -d lib",
     "example": "node examples/secure_dfu_node.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "precommit": "npm run build && lint-staged"
+    "precommit": "lint-staged"
   },
   "repository": {
     "type": "git",
@@ -41,6 +41,7 @@
   },
   "lint-staged": {
     "{src,examples}/**/*.js": [
+      "npm run build",
       "prettier --write",
       "git add"
     ]
