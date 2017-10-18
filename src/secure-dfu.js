@@ -52,6 +52,13 @@ const EXTENDED_ERROR = {
   0x0d: "Insufficient space", // The available space on the device is insufficient to hold the firmware.
 }
 
+export const STATES = {
+  UPLOADING: 3,
+  DISCONNECTING: 5,
+  COMPLETED: 6,
+  ABORTED: 7,
+}
+
 export class SecureDFU extends EventEmitter {
   static SERVICE_UUID = SERVICE_UUID
 
@@ -71,6 +78,10 @@ export class SecureDFU extends EventEmitter {
 
   error(err) {
     this.emit("error", err)
+  }
+
+  state(state) {
+    this.emit("stateChanged", { state })
   }
 
   progress(bytes) {
@@ -98,19 +109,9 @@ export class SecureDFU extends EventEmitter {
         return this.transferFirmware(firmware)
       })
       .then(() => {
-        this.log("complete, disconnecting...")
-        return new Promise((resolve, reject) => {
-          device.disconnect(error => {
-            if (error) {
-              reject(error)
-            }
-          })
-          device.once("disconnect", () => {
-            this.log("disconnect")
-            resolve()
-          })
-        })
+        this.state(STATES.COMPLETED)
       })
+      .then(() => this.disconnect(device))
   }
 
   abort() {
@@ -170,6 +171,22 @@ export class SecureDFU extends EventEmitter {
         this.log("found DFU service")
         return this.getDFUCharacteristics(service)
       })
+  }
+
+  disconnect(device) {
+    this.log("complete, disconnecting...")
+    this.state(STATES.DISCONNECTING)
+    return new Promise((resolve, reject) => {
+      device.disconnect(error => {
+        if (error) {
+          reject(error)
+        }
+      })
+      device.once("disconnect", () => {
+        this.log("disconnect")
+        resolve()
+      })
+    })
   }
 
   getDFUService(device) {
@@ -306,6 +323,8 @@ export class SecureDFU extends EventEmitter {
   transfer(buffer, type, selectType, createType) {
     this.bailOnAbort()
 
+    this.state(STATES.UPLOADING)
+
     return this.sendControl(selectType).then(response => {
       let maxSize = response.getUint32(0, LITTLE_ENDIAN)
       let offset = response.getUint32(4, LITTLE_ENDIAN)
@@ -395,6 +414,7 @@ export class SecureDFU extends EventEmitter {
 
   bailOnAbort() {
     if (this.isAborted) {
+      this.state(STATES.ABORTED)
       throw new Error("aborted")
     }
   }

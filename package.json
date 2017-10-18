@@ -43,7 +43,7 @@
     "{src,examples}/**/*.js": [
       "npm run build",
       "prettier --write",
-      "git add"
+      "git add ."
     ]
   }
 }
