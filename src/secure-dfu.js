@@ -53,6 +53,8 @@ const EXTENDED_ERROR = {
 }
 
 export const STATES = {
+  CONNECTING: 0,
+  STARTING: 1,
   UPLOADING: 3,
   DISCONNECTING: 5,
   COMPLETED: 6,
@@ -99,13 +101,17 @@ export class SecureDFU extends EventEmitter {
     if (!init) throw new Error("Init not specified")
     if (!firmware) throw new Error("Firmware not specified")
 
+    this.state(STATES.CONNECTING)
+
     return this.connect(device)
       .then(() => {
         this.log("transferring init")
+        this.state(STATES.STARTING)
         return this.transferInit(init)
       })
       .then(() => {
         this.log("transferring firmware")
+        this.state(STATES.UPLOADING)
         return this.transferFirmware(firmware)
       })
       .then(() => {
@@ -322,8 +328,6 @@ export class SecureDFU extends EventEmitter {
 
   transfer(buffer, type, selectType, createType) {
     this.bailOnAbort()
-
-    this.state(STATES.UPLOADING)
 
     return this.sendControl(selectType).then(response => {
       let maxSize = response.getUint32(0, LITTLE_ENDIAN)
