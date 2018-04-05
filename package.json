@@ -34,8 +34,8 @@
     "husky": "^0.14.3",
     "jszip": "^3.1.3",
     "lint-staged": "^4.2.3",
-    "noble": "git+https://gitlab2.polidea.com/TimeularZeiDependencies/noble#78263a5898aa4890acbe2726b1c3304419d34307",
-    "usb": "git+https://gitlab2.polidea.com/TimeularZeiDependencies/node-usb#5c436c8e9416ce75b18e02f8af665d4fa327da66",
+    "noble": "1.9.0",
+    "usb": "git+https://github.com/Timeular/nobe-usb#85684e74a43c4bc6be842e2405c03aa8494914f9",
     "prettier": "^1.7.4",
     "progress": "^2.0.0"
   },
