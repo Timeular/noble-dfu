@@ -73,6 +73,7 @@ export class SecureDFU extends EventEmitter {
     this.controlChar = null
     this.packetChar = null
     this.isAborted = false
+    this.stop = false;
   }
 
   log(message) {
@@ -119,10 +120,10 @@ export class SecureDFU extends EventEmitter {
     await this.connect(device)
     this.log("transferring init")
     this.state(STATES.STARTING)
-    await this.transferInit(init)
+    await this.transferInit(init, 3)
     this.log("transferring firmware")
     this.state(STATES.UPLOADING)
-    await this.transferFirmware(firmware)
+    await this.transferFirmware(init, firmware, 3)
     this.state(STATES.COMPLETED)
   }
 
@@ -314,37 +315,77 @@ export class SecureDFU extends EventEmitter {
     })
   }
 
-  transferInit(buffer) {
-    return this.transfer(buffer, "init", OPERATIONS.SELECT_COMMAND, OPERATIONS.CREATE_COMMAND)
-  }
-
-  transferFirmware(buffer) {
-    return this.transfer(buffer, "firmware", OPERATIONS.SELECT_DATA, OPERATIONS.CREATE_DATA)
-  }
-
-  async transfer(buffer, type, selectType, createType) {
+  async transferInit(buffer, tryCount, forceInit) {
     this.bailOnAbort()
 
-    const response = await this.sendControl(selectType)
+    const response = await this.sendControl(OPERATIONS.SELECT_COMMAND)
     let maxSize = response.getUint32(0, LITTLE_ENDIAN)
     let offset = response.getUint32(4, LITTLE_ENDIAN)
     let crc = response.getInt32(8, LITTLE_ENDIAN)
 
-    if (type === "init" && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
+    if(forceInit) {
+      this.log("forced init retransferring init")
+      offset = 0
+    } else if (!forceInit && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
+      // await this.sendControl(OPERATIONS.EXECUTE)
       this.log("init packet already available, skipping transfer")
       return
     }
 
+    let transferred = buffer.slice(0, offset)
+    if(!this.checkCrc(transferred, crc)) {
+      tryCount--
+      if(tryCount == 0) {
+        throw new Error("could not validate init packet")
+      }
+      this.log("init crc check failed retrying")
+      return this.transferInit(buffer, tryCount, true)
+    }
+    this.log(`init resuming transfer at ${offset} with max size ${maxSize}`)
+
     this.progress = function(bytes) {
       this.emit("progress", {
-        object: type,
+        object: 'init',
         totalBytes: buffer.byteLength,
         currentBytes: bytes,
       })
     }
     this.progress(0)
 
-    return this.transferObject(buffer, createType, maxSize, offset)
+    return this.transferObject(buffer, OPERATIONS.CREATE_COMMAND, maxSize, offset)
+  }
+
+  async transferFirmware(initBuffer, buffer, tryCount) {
+    this.bailOnAbort()
+
+    const response = await this.sendControl(OPERATIONS.SELECT_DATA)
+    let maxSize = response.getUint32(0, LITTLE_ENDIAN)
+    let offset = response.getUint32(4, LITTLE_ENDIAN)
+    let crc = response.getInt32(8, LITTLE_ENDIAN)
+
+    let transferred = buffer.slice(0, offset)
+    if(!this.checkCrc(transferred, crc)) {
+      tryCount--
+      if(tryCount == 0) {
+        throw new Error("could not validate firmware packet")
+      }
+      this.log(`firmware crc check failed retrying ${offset}`)
+      //await this.transferInit(initBuffer, 3, true)
+     // return this.transferFirmware(initBuffer, buffer, tryCount)
+     offset = 0
+    }
+    this.log(`firmware resuming transfer at ${offset} with max size ${maxSize}`)
+
+    this.progress = function(bytes) {
+      this.emit("progress", {
+        object: 'firmware',
+        totalBytes: buffer.byteLength,
+        currentBytes: bytes,
+      })
+    }
+    this.progress(0)
+
+    return this.transferObject(buffer, OPERATIONS.CREATE_DATA, maxSize, offset)
   }
 
   async transferObject(buffer, createType, maxSize, offset) {
@@ -352,7 +393,13 @@ export class SecureDFU extends EventEmitter {
 
     let start = offset - offset % maxSize
     let end = Math.min(start + maxSize, buffer.byteLength)
-
+    this.log(`transfer object from ${start}-${end} total size ${buffer.byteLength} bytes`)
+    /*if(this.stop) {
+      throw new Error('stop')
+    }
+    if(this.stop == false) {
+      this.stop = true;
+    }*/
     let view = new DataView(new ArrayBuffer(4))
     view.setUint32(0, end - start, LITTLE_ENDIAN)
 
@@ -367,6 +414,8 @@ export class SecureDFU extends EventEmitter {
     if (this.checkCrc(responsedata, crc)) {
       this.log(`written ${transferred} bytes`)
       offset = transferred
+      // throw new Error('stop')
+      
       await this.sendControl(OPERATIONS.EXECUTE)
     } else {
       this.error("object failed to validate")
