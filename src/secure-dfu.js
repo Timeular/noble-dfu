@@ -103,7 +103,19 @@ export class SecureDFU extends EventEmitter {
     if (!firmware) throw new Error("Firmware not specified")
 
     this.state(STATES.CONNECTING)
+    const disconnectWatcher = new Promise((resolve, reject) => {
+      device.once("disconnect", () => {
+        this.controlChar = null
+        this.packetChar = null
+        reject('disconnected')
+      })
+    })
 
+    await Promise.race([this.doUpdate(device, init, firmware), disconnectWatcher])
+    return this.disconnect(device)
+  }
+
+  async doUpdate(device, init, firmware) {
     await this.connect(device)
     this.log("transferring init")
     this.state(STATES.STARTING)
@@ -112,7 +124,6 @@ export class SecureDFU extends EventEmitter {
     this.state(STATES.UPLOADING)
     await this.transferFirmware(firmware)
     this.state(STATES.COMPLETED)
-    this.disconnect(device)
   }
 
   abort() {
@@ -120,11 +131,6 @@ export class SecureDFU extends EventEmitter {
   }
 
   async connect(device) {
-    device.once("disconnect", () => {
-      this.controlChar = null
-      this.packetChar = null
-    })
-
     const characteristics = await this.gattConnect(device)
     this.log(`found ${characteristics.length} characteristic(s)`)
 
