@@ -1,4 +1,5 @@
 "use strict"
+require("babel-polyfill");
 
 import EventEmitter from "events"
 
@@ -94,7 +95,7 @@ export class SecureDFU extends EventEmitter {
     })
   }
 
-  update(device, init, firmware) {
+  async update(device, init, firmware) {
     this.isAborted = false
 
     if (!device) throw new Error("Device not specified")
@@ -103,80 +104,69 @@ export class SecureDFU extends EventEmitter {
 
     this.state(STATES.CONNECTING)
 
-    return this.connect(device)
-      .then(() => {
-        this.log("transferring init")
-        this.state(STATES.STARTING)
-        return this.transferInit(init)
-      })
-      .then(() => {
-        this.log("transferring firmware")
-        this.state(STATES.UPLOADING)
-        return this.transferFirmware(firmware)
-      })
-      .then(() => {
-        this.state(STATES.COMPLETED)
-      })
-      .then(() => this.disconnect(device))
+    await this.connect(device)
+    this.log("transferring init")
+    this.state(STATES.STARTING)
+    await this.transferInit(init)
+    this.log("transferring firmware")
+    this.state(STATES.UPLOADING)
+    await this.transferFirmware(firmware)
+    this.state(STATES.COMPLETED)
+    this.disconnect(device)
   }
 
   abort() {
     this.isAborted = true
   }
 
-  connect(device) {
+  async connect(device) {
     device.once("disconnect", () => {
       this.controlChar = null
       this.packetChar = null
     })
 
-    return this.gattConnect(device).then(characteristics => {
-      this.log(`found ${characteristics.length} characteristic(s)`)
+    const characteristics = await this.gattConnect(device)
+    this.log(`found ${characteristics.length} characteristic(s)`)
 
-      this.packetChar = characteristics.find(characteristic => {
-        return getCanonicalUUID(characteristic.uuid) === PACKET_UUID
-      })
-      if (!this.packetChar) throw new Error("Unable to find packet characteristic")
-      this.log("found packet characteristic")
+    this.packetChar = characteristics.find(characteristic => {
+      return getCanonicalUUID(characteristic.uuid) === PACKET_UUID
+    })
+    if (!this.packetChar) throw new Error("Unable to find packet characteristic")
+    this.log("found packet characteristic")
 
-      this.controlChar = characteristics.find(characteristic => {
-        return getCanonicalUUID(characteristic.uuid) === CONTROL_UUID
-      })
-      if (!this.controlChar) throw new Error("Unable to find control characteristic")
-      this.log("found control characteristic")
+    this.controlChar = characteristics.find(characteristic => {
+      return getCanonicalUUID(characteristic.uuid) === CONTROL_UUID
+    })
+    if (!this.controlChar) throw new Error("Unable to find control characteristic")
+    this.log("found control characteristic")
 
-      if (!this.controlChar.properties.includes("notify") && !this.controlChar.properties.includes("indicate")) {
-        throw new Error("Control characteristic does not allow notifications")
-      }
-      this.controlChar.on("data", this.handleNotification.bind(this))
-      return new Promise((resolve, reject) => {
-        this.controlChar.notify(true, error => {
-          this.log("enabled control notifications")
-          if (error) return reject(error)
-          resolve(device)
-        })
+    if (!this.controlChar.properties.includes("notify") && !this.controlChar.properties.includes("indicate")) {
+      throw new Error("Control characteristic does not allow notifications")
+    }
+    this.controlChar.on("data", this.handleNotification.bind(this))
+    return new Promise((resolve, reject) => {
+      this.controlChar.notify(true, error => {
+        this.log("enabled control notifications")
+        if (error) return reject(error)
+        resolve(device)
       })
     })
   }
 
-  gattConnect(device) {
-    return new Promise((resolve, reject) => {
+  async gattConnect(device) {
+    await new Promise((resolve, reject) => {
       if (device.state === "connected") return resolve(device)
       device.connect(error => {
         if (error) return reject(error)
         resolve(device)
       })
     })
-      .then(device => {
-        this.log("connected to gatt server")
-        return this.getDFUService(device).catch(() => {
-          throw new Error("Unable to find DFU service")
-        })
-      })
-      .then(service => {
-        this.log("found DFU service")
-        return this.getDFUCharacteristics(service)
-      })
+    this.log("connected to gatt server")
+    const service = await this.getDFUService(device).catch(() => {
+      throw new Error("Unable to find DFU service")
+    })
+    this.log("found DFU service")
+    return this.getDFUCharacteristics(service)
   }
 
   disconnect(device) {
@@ -326,33 +316,32 @@ export class SecureDFU extends EventEmitter {
     return this.transfer(buffer, "firmware", OPERATIONS.SELECT_DATA, OPERATIONS.CREATE_DATA)
   }
 
-  transfer(buffer, type, selectType, createType) {
+  async transfer(buffer, type, selectType, createType) {
     this.bailOnAbort()
 
-    return this.sendControl(selectType).then(response => {
-      let maxSize = response.getUint32(0, LITTLE_ENDIAN)
-      let offset = response.getUint32(4, LITTLE_ENDIAN)
-      let crc = response.getInt32(8, LITTLE_ENDIAN)
+    const response = await this.sendControl(selectType)
+    let maxSize = response.getUint32(0, LITTLE_ENDIAN)
+    let offset = response.getUint32(4, LITTLE_ENDIAN)
+    let crc = response.getInt32(8, LITTLE_ENDIAN)
 
-      if (type === "init" && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
-        this.log("init packet already available, skipping transfer")
-        return
-      }
+    if (type === "init" && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
+      this.log("init packet already available, skipping transfer")
+      return
+    }
 
-      this.progress = function(bytes) {
-        this.emit("progress", {
-          object: type,
-          totalBytes: buffer.byteLength,
-          currentBytes: bytes,
-        })
-      }
-      this.progress(0)
+    this.progress = function(bytes) {
+      this.emit("progress", {
+        object: type,
+        totalBytes: buffer.byteLength,
+        currentBytes: bytes,
+      })
+    }
+    this.progress(0)
 
-      return this.transferObject(buffer, createType, maxSize, offset)
-    })
+    return this.transferObject(buffer, createType, maxSize, offset)
   }
 
-  transferObject(buffer, createType, maxSize, offset) {
+  async transferObject(buffer, createType, maxSize, offset) {
     this.bailOnAbort()
 
     let start = offset - offset % maxSize
@@ -361,50 +350,41 @@ export class SecureDFU extends EventEmitter {
     let view = new DataView(new ArrayBuffer(4))
     view.setUint32(0, end - start, LITTLE_ENDIAN)
 
-    return this.sendControl(createType, view.buffer)
-      .then(() => {
-        let data = buffer.slice(start, end)
-        return this.transferData(data, start)
-      })
-      .then(() => {
-        return this.sendControl(OPERATIONS.CALCULATE_CHECKSUM)
-      })
-      .then(response => {
-        let crc = response.getInt32(4, LITTLE_ENDIAN)
-        let transferred = response.getUint32(0, LITTLE_ENDIAN)
-        let data = buffer.slice(0, transferred)
+    await this.sendControl(createType, view.buffer)
+    let data = buffer.slice(start, end)
+    await this.transferData(data, start)
+    const response = await this.sendControl(OPERATIONS.CALCULATE_CHECKSUM)
+    let crc = response.getInt32(4, LITTLE_ENDIAN)
+    let transferred = response.getUint32(0, LITTLE_ENDIAN)
+    let responsedata = buffer.slice(0, transferred)
 
-        if (this.checkCrc(data, crc)) {
-          this.log(`written ${transferred} bytes`)
-          offset = transferred
-          return this.sendControl(OPERATIONS.EXECUTE)
-        } else {
-          this.error("object failed to validate")
-        }
-      })
-      .then(() => {
-        if (end < buffer.byteLength) {
-          return this.transferObject(buffer, createType, maxSize, offset)
-        } else {
-          this.log("transfer complete")
-        }
-      })
+    if (this.checkCrc(responsedata, crc)) {
+      this.log(`written ${transferred} bytes`)
+      offset = transferred
+      await this.sendControl(OPERATIONS.EXECUTE)
+    } else {
+      this.error("object failed to validate")
+    }
+    if (end < buffer.byteLength) {
+      await this.transferObject(buffer, createType, maxSize, offset)
+    } else {
+      this.log("transfer complete")
+    }
   }
 
-  transferData(data, offset, start) {
+  async transferData(data, offset, start) {
     start = start || 0
     let end = Math.min(start + PACKET_SIZE, data.byteLength)
     let packet = data.slice(start, end)
 
     const buffer = new Buffer(packet)
 
-    return writeCharacteristic(this.packetChar, buffer).then(() => {
-      this.progress(offset + end)
+    await writeCharacteristic(this.packetChar, buffer)
+    this.progress(offset + end)
 
-      if (end < data.byteLength) {
-        return this.transferData(data, offset, end)
-      }
-    })
+    if (end < data.byteLength) {
+      return this.transferData(data, offset, end)
+    }
   }
 
   checkCrc(buffer, crc) {
