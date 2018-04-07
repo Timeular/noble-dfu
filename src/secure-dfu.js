@@ -1,5 +1,5 @@
 "use strict"
-require("babel-polyfill");
+require("babel-polyfill")
 
 import EventEmitter from "events"
 
@@ -107,7 +107,7 @@ export class SecureDFU extends EventEmitter {
       device.once("disconnect", () => {
         this.controlChar = null
         this.packetChar = null
-        reject('disconnected')
+        reject("disconnected")
       })
     })
 
@@ -321,159 +321,196 @@ export class SecureDFU extends EventEmitter {
     let initPacketSizeInBytes = buffer.byteLength
     // First, select the Command Object. As a response the maximum command size and information whether there is already
     // a command saved from a previous connection is returned.
+    this.log("requesting init state")
     const response = await this.sendControl(OPERATIONS.SELECT_COMMAND)
     let maxSize = response.getUint32(0, LITTLE_ENDIAN)
     let offset = response.getUint32(4, LITTLE_ENDIAN)
     let crc = response.getInt32(8, LITTLE_ENDIAN)
+    this.log(`received maxSize: ${maxSize}, offset: ${offset}, crc: ${crc}`)
 
     // Can we resume? If the offset obtained from the device is greater then zero we can compare it with the local init packet CRC
-		// and resume sending the init packet, or even skip sending it if the whole file was sent before.
-    let skipSendingInitPacket = false;
-		let resumeSendingInitPacket = false;
-    if (offset > 0 && offset <= buffer.byteLength) {
+    // and resume sending the init packet, or even skip sending it if the whole file was sent before.
+    let skipSendingInitPacket = false
+    let resumeSendingInitPacket = false
+    if (offset > 0 && offset <= initPacketSizeInBytes) {
+      this.log(`offset is between 0 and buffer size (${initPacketSizeInBytes})`)
       // Read the same number of bytes from the current init packet to calculate local CRC32
       let transferred = buffer.slice(0, offset)
+      this.log(transferred.byteLength)
       // Calculate the CRC32
-      if(this.checkCrc(transferred, crc)) {
-        if (offset ==  initPacketSizeInBytes) {
+      if (this.checkCrc(transferred, crc)) {
+        if (offset === initPacketSizeInBytes) {
+          this.log("The offset equals the init package size. Will skip sending init package")
           // The whole init packet was sent and it is equal to one we try to send now.
           // There is no need to send it again. We may try to resume sending data.
-          skipSendingInitPacket = true;
+          skipSendingInitPacket = true
         } else {
-          resumeSendingInitPacket = true;
+          this.log("The offset is not equal to the init package size. Will resume sending init package")
+          resumeSendingInitPacket = true
         }
       } else {
+        this.log("A different init package was sent before, or an error occurred while sending. Resending")
         // A different Init packet was sent before, or the error occurred while sending.
-				// We have to send the whole Init packet again.
+        // We have to send the whole Init packet again.
         offset = 0
       }
     }
 
     if (!skipSendingInitPacket) {
-      for (let attempt = 1; attempt <= 3;) {
-				if (!resumeSendingInitPacket) {
+      for (let attempt = 1; attempt <= 3; ) {
+        if (!resumeSendingInitPacket) {
           // Create the Init object
           // private static final int OP_CODE_CREATE_KEY = 0x01;
           // private static final int OBJECT_COMMAND = 0x01;
+          this.log("creating init object")
           const view = new DataView(new ArrayBuffer(4))
           view.setUint32(0, initPacketSizeInBytes, LITTLE_ENDIAN)
           await this.sendControl(OPERATIONS.CREATE_COMMAND, view.buffer)
+          this.log("creat command finished")
+        } else {
+          this.log(`resuming sending init package: attempt ${attempt}`)
         }
         // Write Init data to the Packet Characteristic
         let data = buffer.slice(offset)
+        this.log(`transfering data starting with offset: ${offset}`)
         await this.transferData(data, offset)
+        this.log("transferred data")
+
         // Calculate Checksum
+        this.log("Calculating checksum")
         const response = await this.sendControl(OPERATIONS.CALCULATE_CHECKSUM)
         let crc = response.getInt32(4, LITTLE_ENDIAN)
         let transferred = response.getUint32(0, LITTLE_ENDIAN)
         let responsedata = buffer.slice(0, transferred)
+        this.log(`Received checksum: crc: ${crc}, transferred: ${transferred}`)
 
         if (this.checkCrc(responsedata, crc)) {
+          this.log("checksum ok")
           // Everything is OK, we can proceed
-          break;
+          break
         } else if (attempt < 3) {
-            attempt++;
-            // Go back to the beginning, we will send the whole Init packet again
-            resumeSendingInitPacket = false;
-            offset = 0;
+          this.log(`Starting next attempt #${attempt}`)
+          attempt++
+          // Go back to the beginning, we will send the whole Init packet again
+          resumeSendingInitPacket = false
+          offset = 0
         } else {
           this.error("crc doesn't match")
           this.log("crc doesn't match")
           return false
         }
       }
+    } else {
+      this.log("skipped sending init package")
     }
-    
-		// Execute Init packet. It's better to execute it twice than not execute at all...
+
+    // Execute Init packet. It's better to execute it twice than not execute at all...
+    this.log("executing")
     await this.sendControl(OPERATIONS.EXECUTE)
+    this.log("finished executing")
     return true
   }
 
   async sendFirmware(buffer) {
     this.bailOnAbort()
     // SELECT_DATA: [0x06, 0x02],
+    this.log("requesting firmware state")
     const response = await this.sendControl(OPERATIONS.SELECT_DATA)
     let maxSize = response.getUint32(0, LITTLE_ENDIAN)
     let offset = response.getUint32(4, LITTLE_ENDIAN)
     let crc = response.getInt32(8, LITTLE_ENDIAN)
+    this.log(`received maxSize: ${maxSize}, offset: ${offset}, crc: ${crc}`)
 
     let imageSizeInBytes = buffer.byteLength
 
     // Number of chunks in which the data will be sent
-		const chunkCount = (imageSizeInBytes + maxSize - 1) / maxSize
-		let currentChunk = 0
+    const chunkCount = (imageSizeInBytes + maxSize - 1) / maxSize
+    let currentChunk = 0
     let resumeSendingData = false
 
     // Can we resume? If the offset obtained from the device is greater then zero we can compare it with the local CRC
-		// and resume sending the data.
-		if (offset > 0) {
+    // and resume sending the data.
+    if (offset > 0) {
       currentChunk = offset / maxSize
       let bytesSentAndExecuted = maxSize * currentChunk
       let bytesSentNotExecuted = offset - bytesSentAndExecuted
 
       // If the offset is dividable by maxSize, assume that the last page was not executed
-      if (bytesSentNotExecuted == 0) {
+      if (bytesSentNotExecuted === 0) {
         bytesSentAndExecuted -= maxSize
         bytesSentNotExecuted = maxSize
       }
 
       let transferred = buffer.slice(0, offset)
-      if(this.checkCrc(transferred, crc)) {
+      if (this.checkCrc(transferred, crc)) {
         // If the whole page was sent and CRC match, we have to make sure it was executed
         if (bytesSentNotExecuted === maxSize && offset < imageSizeInBytes) {
+          this.log("firmware already transferred")
+          this.log("executing")
           await this.sendControl(OPERATIONS.EXECUTE)
+          this.log("finished executing")
         } else {
-          resumeSendingData = true;
+          resumeSendingData = true
         }
       } else {
         // The CRC of the current object is not correct. If there was another Data object sent before, its CRC must have been correct,
-				// as it has been executed. Either way, we have to create the current object again.
+        // as it has been executed. Either way, we have to create the current object again.
         offset -= bytesSentNotExecuted
       }
     }
 
     if (offset < imageSizeInBytes) {
-      let attempt = 1;
+      let attempt = 1
       let end = 0
-			// Each page will be sent in MAX_ATTEMPTS
-			do {
+      // Each page will be sent in MAX_ATTEMPTS
+      do {
+        this.log(`starting attempt #${attempt}`)
         let start = offset - offset % maxSize
         end = Math.min(start + maxSize, buffer.byteLength)
-				if (!resumeSendingData) {
+        if (!resumeSendingData) {
           // Create the Data object
           let view = new DataView(new ArrayBuffer(4))
           view.setUint32(0, end - start, LITTLE_ENDIAN)
+          this.log(`creating data object: size: ${end - start}`)
           await this.sendControl(OPERATIONS.CREATE_DATA, view.buffer)
-				} else {
-					resumeSendingData = false;
+        } else {
+          resumeSendingData = false
         }
 
         let data = buffer.slice(start, end)
+        this.log(`transfering data starting with offset: ${offset}`)
         await this.transferData(data, start)
+        this.log("transferred data")
 
         // Calculate Checksum
+        this.log("Calculating checksum")
         const response = await this.sendControl(OPERATIONS.CALCULATE_CHECKSUM)
         crc = response.getInt32(4, LITTLE_ENDIAN)
         let transferred = response.getUint32(0, LITTLE_ENDIAN)
+        this.log(`Received checksum: crc: ${crc}, transferred: ${transferred}`)
 
         // It may happen, that not all bytes that were sent were received by the remote device
-        const bytesLost = end - transferred;
+        const bytesLost = end - transferred
+        this.log(`Bytes lost: ${bytesLost}`)
 
         let responsedata = buffer.slice(0, transferred)
         if (this.checkCrc(responsedata, crc)) {
           if (bytesLost > 0) {
-						resumeSendingData = true;
-						continue;
+            resumeSendingData = true
+            continue
           }
           this.log(`written ${transferred} bytes`)
           await this.sendControl(OPERATIONS.EXECUTE)
           // Increment iterator
-          currentChunk++;
-          attempt = 1;
+          currentChunk++
+          attempt = 1
           offset = transferred
+
+          this.log(`Next chunk: currentChunk: ${currentChunk}, attempt: ${attempt}, offset: ${offset}`)
         } else if (attempt < MAX_ATTEMPTS) {
           // try again with same offset
-          attempt++;
+          this.log(`Starting next attempt: ${attempt}`)
+          attempt++
         } else {
           this.error("crc doesn't match")
           this.log("crc doesn't match")
@@ -481,8 +518,10 @@ export class SecureDFU extends EventEmitter {
         }
       } while (end < buffer.byteLength)
     } else {
-			// Looks as if the whole file was sent correctly but has not been executed
+      // Looks as if the whole file was sent correctly but has not been executed
+      this.log("Executing")
       await this.sendControl(OPERATIONS.EXECUTE)
+      this.log("Finished executing")
     }
     return true
   }
@@ -495,7 +534,7 @@ export class SecureDFU extends EventEmitter {
     let offset = response.getUint32(4, LITTLE_ENDIAN)
     let crc = response.getInt32(8, LITTLE_ENDIAN)
 
-    if(forceInit) {
+    if (forceInit) {
       this.log("forced init retransferring init")
       offset = 0
     } else if (!forceInit && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
@@ -505,9 +544,9 @@ export class SecureDFU extends EventEmitter {
     }
 
     let transferred = buffer.slice(0, offset)
-    if(!this.checkCrc(transferred, crc)) {
+    if (!this.checkCrc(transferred, crc)) {
       tryCount--
-      if(tryCount == 0) {
+      if (tryCount === 0) {
         throw new Error("could not validate init packet")
       }
       this.log("init crc check failed retrying")
@@ -517,7 +556,7 @@ export class SecureDFU extends EventEmitter {
 
     this.progress = function(bytes) {
       this.emit("progress", {
-        object: 'init',
+        object: "init",
         totalBytes: buffer.byteLength,
         currentBytes: bytes,
       })
@@ -536,21 +575,21 @@ export class SecureDFU extends EventEmitter {
     let crc = response.getInt32(8, LITTLE_ENDIAN)
 
     let transferred = buffer.slice(0, offset)
-    if(!this.checkCrc(transferred, crc)) {
+    if (!this.checkCrc(transferred, crc)) {
       tryCount--
-      if(tryCount == 0) {
+      if (tryCount == 0) {
         throw new Error("could not validate firmware packet")
       }
       this.log(`firmware crc check failed retrying ${offset}`)
       //await this.transferInit(initBuffer, 3, true)
-     // return this.transferFirmware(initBuffer, buffer, tryCount)
-     offset = 0
+      // return this.transferFirmware(initBuffer, buffer, tryCount)
+      offset = 0
     }
     this.log(`firmware resuming transfer at ${offset} with max size ${maxSize}`)
 
     this.progress = function(bytes) {
       this.emit("progress", {
-        object: 'firmware',
+        object: "firmware",
         totalBytes: buffer.byteLength,
         currentBytes: bytes,
       })
@@ -580,7 +619,7 @@ export class SecureDFU extends EventEmitter {
     if (this.checkCrc(responsedata, crc)) {
       this.log(`written ${transferred} bytes`)
       offset = transferred
-      
+
       await this.sendControl(OPERATIONS.EXECUTE)
     } else {
       this.error("object failed to validate")
@@ -599,7 +638,9 @@ export class SecureDFU extends EventEmitter {
 
     const buffer = new Buffer(packet)
 
+    this.log(`Writing from ${start} to ${end}`)
     await writeCharacteristic(this.packetChar, buffer)
+    this.log("Finished writing")
     this.progress(offset + end)
 
     if (end < data.byteLength) {
@@ -613,7 +654,9 @@ export class SecureDFU extends EventEmitter {
       return true
     }
 
-    return crc === this.crc32(new Uint8Array(buffer))
+    const ourCrc = this.crc32(new Uint8Array(buffer))
+    this.log(`Our calculated crc: ${ourCrc}, received: ${crc}`)
+    return crc === ourCrc
   }
 
   bailOnAbort() {

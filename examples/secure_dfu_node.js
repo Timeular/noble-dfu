@@ -30,7 +30,7 @@ function getFileName() {
       resolve(answer)
     })
     rl.write(
-      "https://s3.eu-central-1.amazonaws.com/timeular-firmware-packages/firmwares/ZEI_320-801b_s130_app_dfu_package_v114-rc1.zip"
+      "https://s3.eu-central-1.amazonaws.com/timeular-firmware-packages/firmwares/ZEI_320-801b_s130_app_dfu_package_v121.zip"
     )
   })
 }
