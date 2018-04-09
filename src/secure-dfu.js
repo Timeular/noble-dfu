@@ -95,7 +95,7 @@ export class SecureDFU extends EventEmitter {
     })
   }
 
-  async update(device, init, firmware) {
+  async update(device, init, firmware, forceInit) {
     this.isAborted = false
 
     if (!device) throw new Error("Device not specified")
@@ -111,16 +111,16 @@ export class SecureDFU extends EventEmitter {
       })
     })
 
-    await Promise.race([this.doUpdate(device, init, firmware), disconnectWatcher])
+    await Promise.race([this.doUpdate(device, init, firmware, forceInit), disconnectWatcher])
     return this.disconnect(device)
   }
 
-  async doUpdate(device, init, firmware) {
+  async doUpdate(device, init, firmware, forceInit=false) {
     await this.connect(device)
     this.log("transferring init")
     this.state(STATES.STARTING)
     // await this.transferInit(init, 3)
-    await this.sendInitPacket(init)
+    await this.sendInitPacket(init, forceInit)
     this.log("transferring firmware")
     this.state(STATES.UPLOADING)
     // await this.transferFirmware(init, firmware, 3)
@@ -316,7 +316,7 @@ export class SecureDFU extends EventEmitter {
     })
   }
 
-  async sendInitPacket(buffer) {
+  async sendInitPacket(buffer, forceInit=false) {
     this.bailOnAbort()
     let initPacketSizeInBytes = buffer.byteLength
     // First, select the Command Object. As a response the maximum command size and information whether there is already
@@ -354,6 +354,13 @@ export class SecureDFU extends EventEmitter {
         // We have to send the whole Init packet again.
         offset = 0
       }
+    }
+
+    if (forceInit) {
+      skipSendingInitPacket = false
+      resumeSendingInitPacket = false
+      offset = 0
+      this.log("Forcing init transfer")
     }
 
     if (!skipSendingInitPacket) {
@@ -412,6 +419,7 @@ export class SecureDFU extends EventEmitter {
   }
 
   async sendFirmware(buffer) {
+    const MAX_ATTEMPTS = 3
     this.bailOnAbort()
     // SELECT_DATA: [0x06, 0x02],
     this.log("requesting firmware state")
@@ -431,9 +439,11 @@ export class SecureDFU extends EventEmitter {
     // Can we resume? If the offset obtained from the device is greater then zero we can compare it with the local CRC
     // and resume sending the data.
     if (offset > 0) {
-      currentChunk = offset / maxSize
+      currentChunk = Math.floor(offset / maxSize)
       let bytesSentAndExecuted = maxSize * currentChunk
       let bytesSentNotExecuted = offset - bytesSentAndExecuted
+
+      this.log(`bytesSentAndExecuted: ${bytesSentAndExecuted}, bytesSentNotExecuted: ${bytesSentNotExecuted}`)
 
       // If the offset is dividable by maxSize, assume that the last page was not executed
       if (bytesSentNotExecuted === 0) {
@@ -445,7 +455,7 @@ export class SecureDFU extends EventEmitter {
       if (this.checkCrc(transferred, crc)) {
         // If the whole page was sent and CRC match, we have to make sure it was executed
         if (bytesSentNotExecuted === maxSize && offset < imageSizeInBytes) {
-          this.log("firmware already transferred")
+          this.log("page was sent but not executed (crc match)")
           this.log("executing")
           await this.sendControl(OPERATIONS.EXECUTE)
           this.log("finished executing")
@@ -465,7 +475,8 @@ export class SecureDFU extends EventEmitter {
       // Each page will be sent in MAX_ATTEMPTS
       do {
         this.log(`starting attempt #${attempt}`)
-        let start = offset - offset % maxSize
+        const start = offset - offset % maxSize
+        const writeStart = offset
         end = Math.min(start + maxSize, buffer.byteLength)
         if (!resumeSendingData) {
           // Create the Data object
@@ -477,9 +488,9 @@ export class SecureDFU extends EventEmitter {
           resumeSendingData = false
         }
 
-        let data = buffer.slice(start, end)
+        let data = buffer.slice(writeStart, end)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, start)
+        await this.transferData(data, writeStart)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -525,112 +536,6 @@ export class SecureDFU extends EventEmitter {
     }
     return true
   }
-
-  async transferInit(buffer, tryCount, forceInit) {
-    this.bailOnAbort()
-
-    const response = await this.sendControl(OPERATIONS.SELECT_COMMAND)
-    let maxSize = response.getUint32(0, LITTLE_ENDIAN)
-    let offset = response.getUint32(4, LITTLE_ENDIAN)
-    let crc = response.getInt32(8, LITTLE_ENDIAN)
-
-    if (forceInit) {
-      this.log("forced init retransferring init")
-      offset = 0
-    } else if (!forceInit && offset === buffer.byteLength && this.checkCrc(buffer, crc)) {
-      // await this.sendControl(OPERATIONS.EXECUTE)
-      this.log("init packet already available, skipping transfer")
-      return
-    }
-
-    let transferred = buffer.slice(0, offset)
-    if (!this.checkCrc(transferred, crc)) {
-      tryCount--
-      if (tryCount === 0) {
-        throw new Error("could not validate init packet")
-      }
-      this.log("init crc check failed retrying")
-      return this.transferInit(buffer, tryCount, true)
-    }
-    this.log(`init resuming transfer at ${offset} with max size ${maxSize}`)
-
-    this.progress = function(bytes) {
-      this.emit("progress", {
-        object: "init",
-        totalBytes: buffer.byteLength,
-        currentBytes: bytes,
-      })
-    }
-    this.progress(0)
-
-    return this.transferObject(buffer, OPERATIONS.CREATE_COMMAND, maxSize, offset)
-  }
-
-  async transferFirmware(initBuffer, buffer, tryCount) {
-    this.bailOnAbort()
-
-    const response = await this.sendControl(OPERATIONS.SELECT_DATA)
-    let maxSize = response.getUint32(0, LITTLE_ENDIAN)
-    let offset = response.getUint32(4, LITTLE_ENDIAN)
-    let crc = response.getInt32(8, LITTLE_ENDIAN)
-
-    let transferred = buffer.slice(0, offset)
-    if (!this.checkCrc(transferred, crc)) {
-      tryCount--
-      if (tryCount == 0) {
-        throw new Error("could not validate firmware packet")
-      }
-      this.log(`firmware crc check failed retrying ${offset}`)
-      //await this.transferInit(initBuffer, 3, true)
-      // return this.transferFirmware(initBuffer, buffer, tryCount)
-      offset = 0
-    }
-    this.log(`firmware resuming transfer at ${offset} with max size ${maxSize}`)
-
-    this.progress = function(bytes) {
-      this.emit("progress", {
-        object: "firmware",
-        totalBytes: buffer.byteLength,
-        currentBytes: bytes,
-      })
-    }
-    this.progress(0)
-
-    return this.transferObject(buffer, OPERATIONS.CREATE_DATA, maxSize, offset)
-  }
-
-  async transferObject(buffer, createType, maxSize, offset) {
-    this.bailOnAbort()
-
-    let start = offset - offset % maxSize
-    let end = Math.min(start + maxSize, buffer.byteLength)
-    this.log(`transfer object from ${start}-${end} total size ${buffer.byteLength} bytes`)
-    let view = new DataView(new ArrayBuffer(4))
-    view.setUint32(0, end - start, LITTLE_ENDIAN)
-
-    await this.sendControl(createType, view.buffer)
-    let data = buffer.slice(start, end)
-    await this.transferData(data, start)
-    const response = await this.sendControl(OPERATIONS.CALCULATE_CHECKSUM)
-    let crc = response.getInt32(4, LITTLE_ENDIAN)
-    let transferred = response.getUint32(0, LITTLE_ENDIAN)
-    let responsedata = buffer.slice(0, transferred)
-
-    if (this.checkCrc(responsedata, crc)) {
-      this.log(`written ${transferred} bytes`)
-      offset = transferred
-
-      await this.sendControl(OPERATIONS.EXECUTE)
-    } else {
-      this.error("object failed to validate")
-    }
-    if (end < buffer.byteLength) {
-      await this.transferObject(buffer, createType, maxSize, offset)
-    } else {
-      this.log("transfer complete")
-    }
-  }
-
   async transferData(data, offset, start) {
     start = start || 0
     let end = Math.min(start + PACKET_SIZE, data.byteLength)
@@ -638,9 +543,13 @@ export class SecureDFU extends EventEmitter {
 
     const buffer = new Buffer(packet)
 
-    this.log(`Writing from ${start} to ${end}`)
+    if (start === 4080) {
+      this.log(`Writing from ${start} to ${end}`)
+    }
     await writeCharacteristic(this.packetChar, buffer)
+  if (start === 4080) {
     this.log("Finished writing")
+  }
     this.progress(offset + end)
 
     if (end < data.byteLength) {
