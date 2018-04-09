@@ -406,14 +406,16 @@ export class SecureDFU extends EventEmitter {
           return false
         }
       }
+
+      // Execute Init packet. It's better to execute it twice than not execute at all...
+      this.log("executing")
+      await this.sendControl(OPERATIONS.EXECUTE)
+      this.log("finished executing")
     } else {
       this.log("skipped sending init package")
     }
 
-    // Execute Init packet. It's better to execute it twice than not execute at all...
-    this.log("executing")
-    await this.sendControl(OPERATIONS.EXECUTE)
-    this.log("finished executing")
+
     return true
   }
 
