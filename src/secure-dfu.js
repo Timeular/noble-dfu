@@ -1,5 +1,4 @@
 "use strict"
-require("babel-polyfill")
 
 import EventEmitter from "events"
 
