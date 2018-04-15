@@ -30,7 +30,7 @@ function getFileName() {
       resolve(answer)
     })
     rl.write(
-      "https://s3.eu-central-1.amazonaws.com/timeular-firmware-packages/firmwares/ZEI_320-801b_s130_app_dfu_package_v114.zip"
+      "https://s3.eu-central-1.amazonaws.com/timeular-firmware-packages/firmwares/ZEI_320-801b_s130_app_dfu_package_v121_build_2.zip"
     )
   })
 }
@@ -80,7 +80,7 @@ function handleDeviceFound(peripheral, selectFn) {
   console.log(`${bluetoothDevices.length}: ${peripheral.advertisement.localName} (${peripheral.id})`)
 }
 
-function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit=false) {
+function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit = false) {
   var init = null
 
   return dfuPackage
@@ -103,7 +103,7 @@ function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit=false
     })
 }
 
-function update(forceInit=false) {
+function update(forceInit = false) {
   var dfu = null
   var dfuPackage = null
   var manifest = null

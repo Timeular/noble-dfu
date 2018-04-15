@@ -61,6 +61,17 @@ export const STATES = {
   ABORTED: 7,
 }
 
+export const promiseTimeout = function(ms, promise) {
+  let timeout = new Promise((resolve, reject) => {
+    let id = setTimeout(() => {
+      clearTimeout(id)
+      reject(`Timed out in ${ms}`)
+    }, ms)
+  })
+
+  return Promise.race([promise, timeout])
+}
+
 export class SecureDFU extends EventEmitter {
   static SERVICE_UUID = SERVICE_UUID
 
@@ -103,9 +114,10 @@ export class SecureDFU extends EventEmitter {
 
     this.state(STATES.CONNECTING)
     const disconnectWatcher = new Promise((resolve, reject) => {
-      device.once("disconnect", () => {
+      device.once("disconnect", error => {
         this.controlChar = null
         this.packetChar = null
+        this.log(`Disconnect: ${error}`)
         reject("disconnected")
       })
     })
@@ -114,8 +126,9 @@ export class SecureDFU extends EventEmitter {
     return this.disconnect(device)
   }
 
-  async doUpdate(device, init, firmware, forceInit=false) {
-    await this.connect(device)
+  async doUpdate(device, init, firmware, forceInit = false) {
+    this.log("connecting to device")
+    await promiseTimeout(5000, this.connect(device))
     this.log("transferring init")
     this.state(STATES.STARTING)
     // await this.transferInit(init, 3)
@@ -161,15 +174,22 @@ export class SecureDFU extends EventEmitter {
   }
 
   async gattConnect(device) {
-    await new Promise((resolve, reject) => {
-      if (device.state === "connected") return resolve(device)
+    await new Promise(async (resolve, reject) => {
+      if (device.state === "connected") {
+        await new Promise(resolve => device.disconnect(() => resolve()))
+      }
       device.connect(error => {
-        if (error) return reject(error)
+        if (error) {
+          this.log(`gattConnect: Error ${error}`)
+          return reject(error)
+        }
+        this.log(device)
         resolve(device)
       })
     })
     this.log("connected to gatt server")
     const service = await this.getDFUService(device).catch(() => {
+      this.log("Unable to find DFU service")
       throw new Error("Unable to find DFU service")
     })
     this.log("found DFU service")
@@ -194,8 +214,13 @@ export class SecureDFU extends EventEmitter {
 
   getDFUService(device) {
     return new Promise((resolve, reject) => {
-      device.discoverServices([SERVICE_UUID], (error, services) => {
-        if (error) return reject(error)
+      this.log("getDfuService: Startin discover services")
+      device.discoverServices([], (error, services) => {
+        if (error) {
+          this.log(`getDfuService: Error ${error}`)
+          return reject(error)
+        }
+        this.log(`getDfuService: Success ${services[0]}`)
         resolve(services[0])
       })
     })
@@ -296,26 +321,32 @@ export class SecureDFU extends EventEmitter {
   }
 
   sendOperation(characteristic, operation, buffer) {
-    return new Promise((resolve, reject) => {
-      let size = operation.length
-      if (buffer) size += buffer.byteLength
+    return promiseTimeout(
+      1000,
+      new Promise((resolve, reject) => {
+        let size = operation.length
+        if (buffer) size += buffer.byteLength
 
-      let value = new Uint8Array(size)
-      value.set(operation)
-      if (buffer) {
-        let data = new Uint8Array(buffer)
-        value.set(data, operation.length)
-      }
+        let value = new Uint8Array(size)
+        value.set(operation)
+        if (buffer) {
+          let data = new Uint8Array(buffer)
+          value.set(data, operation.length)
+        }
 
-      this.notifyFns[operation[0]] = {
-        resolve: resolve,
-        reject: reject,
-      }
-      writeCharacteristic(characteristic, new Buffer(value), false)
-    })
+        this.notifyFns[operation[0]] = {
+          resolve: resolve,
+          reject: reject,
+        }
+
+        writeCharacteristic(characteristic, new Buffer(value), false)
+          .then(resolve())
+          .catch(err => reject(err))
+      })
+    )
   }
 
-  async sendInitPacket(buffer, forceInit=false) {
+  async sendInitPacket(buffer, forceInit = false) {
     this.bailOnAbort()
     let initPacketSizeInBytes = buffer.byteLength
     // First, select the Command Object. As a response the maximum command size and information whether there is already
@@ -414,7 +445,6 @@ export class SecureDFU extends EventEmitter {
     } else {
       this.log("skipped sending init package")
     }
-
 
     return true
   }
@@ -547,10 +577,10 @@ export class SecureDFU extends EventEmitter {
     if (start === 4080) {
       this.log(`Writing from ${start} to ${end}`)
     }
-    await writeCharacteristic(this.packetChar, buffer)
-  if (start === 4080) {
-    this.log("Finished writing")
-  }
+    await promiseTimeout(5000, writeCharacteristic(this.packetChar, buffer))
+    if (start === 4080) {
+      this.log("Finished writing")
+    }
     this.progress(offset + end)
 
     if (end < data.byteLength) {
