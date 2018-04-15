@@ -80,7 +80,7 @@ function handleDeviceFound(peripheral, selectFn) {
   console.log(`${bluetoothDevices.length}: ${peripheral.advertisement.localName} (${peripheral.id})`)
 }
 
-function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit=false) {
+function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit = false) {
   var init = null
 
   return dfuPackage
@@ -103,7 +103,7 @@ function updateFirmware(dfu, dfuPackage, manifest, device, type, forceInit=false
     })
 }
 
-function update(forceInit=false) {
+function update(forceInit = false) {
   var dfu = null
   var dfuPackage = null
   var manifest = null
