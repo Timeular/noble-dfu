@@ -79,6 +79,7 @@ export class SecureDFU extends EventEmitter {
   }
 
   error(err) {
+    this.log(`Error: {err}`)
     this.emit("error", err)
   }
 
@@ -86,10 +87,10 @@ export class SecureDFU extends EventEmitter {
     this.emit("stateChanged", { state })
   }
 
-  progress(bytes) {
+  progress(bytes, totalBytes) {
     this.emit("progress", {
       object: "unknown",
-      totalBytes: 0,
+      totalBytes,
       currentBytes: bytes,
     })
   }
@@ -379,7 +380,7 @@ export class SecureDFU extends EventEmitter {
         // Write Init data to the Packet Characteristic
         let data = buffer.slice(offset)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, offset)
+        await this.transferData(data, offset, undefined, initPacketSizeInBytes)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -491,7 +492,7 @@ export class SecureDFU extends EventEmitter {
 
         let data = buffer.slice(writeStart, end)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, writeStart)
+        await this.transferData(data, writeStart, undefined, imageSizeInBytes)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -537,24 +538,19 @@ export class SecureDFU extends EventEmitter {
     }
     return true
   }
-  async transferData(data, offset, start) {
+  async transferData(data, offset, start, totalBytes) {
     start = start || 0
     let end = Math.min(start + PACKET_SIZE, data.byteLength)
     let packet = data.slice(start, end)
 
     const buffer = new Buffer(packet)
 
-    if (start === 4080) {
-      this.log(`Writing from ${start} to ${end}`)
-    }
+    this.log(`Writing data ${start}-${start+PACKET_SIZE}`)
     await writeCharacteristic(this.packetChar, buffer)
-  if (start === 4080) {
-    this.log("Finished writing")
-  }
-    this.progress(offset + end)
+    this.progress(offset+start + PACKET_SIZE, totalBytes)
 
     if (end < data.byteLength) {
-      return this.transferData(data, offset, end)
+      return this.transferData(data, offset, end, totalBytes)
     }
   }
 

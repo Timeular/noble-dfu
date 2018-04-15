@@ -5,7 +5,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "rimraf lib; babel src -d lib",
-    "example": "node -r babel-polyfill examples/secure_dfu_node.js",
+    "example": "cross-env DEBUG=gat node -r babel-polyfill examples/secure_dfu_node.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "precommit": "lint-staged"
   },
@@ -38,7 +38,8 @@
     "noble": "1.9.1",
     "prettier": "^1.7.4",
     "progress": "^2.0.0",
-    "usb": "git+https://github.com/Timeular/nobe-usb#85684e74a43c4bc6be842e2405c03aa8494914f9"
+    "usb": "git+https://github.com/Timeular/nobe-usb#85684e74a43c4bc6be842e2405c03aa8494914f9",
+    "cross-env": "^5.1.4"
   },
   "lint-staged": {
     "{src,examples}/**/*.js": [
