@@ -90,7 +90,6 @@ export class SecureDFU extends EventEmitter {
   }
 
   error(err) {
-    this.log(`Error: {err}`)
     this.emit("error", err)
   }
 
@@ -98,10 +97,10 @@ export class SecureDFU extends EventEmitter {
     this.emit("stateChanged", { state })
   }
 
-  progress(bytes, totalBytes) {
+  progress(bytes) {
     this.emit("progress", {
       object: "unknown",
-      totalBytes,
+      totalBytes: 0,
       currentBytes: bytes,
     })
   }
@@ -221,8 +220,14 @@ export class SecureDFU extends EventEmitter {
           this.log(`getDfuService: Error ${error}`)
           return reject(error)
         }
-        this.log(`getDfuService: Success ${services[0]}`)
-        resolve(services[0])
+        this.log(`getDfuService: Found ${services.length} services`)
+        for (let i = 0; i < services.length; i++) {
+          if (services[i].uuid === SERVICE_UUID) {
+            this.log(`getDfuService: Success ${services[i]}`)
+            resolve(services[i])
+          }
+        }
+        reject('DFU service not found')
       })
     })
   }
@@ -323,7 +328,7 @@ export class SecureDFU extends EventEmitter {
 
   sendOperation(characteristic, operation, buffer) {
     return promiseTimeout(
-      1000,
+      5000,
       new Promise((resolve, reject) => {
         let size = operation.length
         if (buffer) size += buffer.byteLength
@@ -341,7 +346,6 @@ export class SecureDFU extends EventEmitter {
         }
 
         writeCharacteristic(characteristic, new Buffer(value), false)
-          .then(resolve())
           .catch(err => reject(err))
       })
     )
@@ -411,7 +415,7 @@ export class SecureDFU extends EventEmitter {
         // Write Init data to the Packet Characteristic
         let data = buffer.slice(offset)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, offset, undefined, initPacketSizeInBytes)
+        await this.transferData(data, offset)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -522,7 +526,7 @@ export class SecureDFU extends EventEmitter {
 
         let data = buffer.slice(writeStart, end)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, writeStart, undefined, imageSizeInBytes)
+        await this.transferData(data, writeStart)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -568,19 +572,24 @@ export class SecureDFU extends EventEmitter {
     }
     return true
   }
-  async transferData(data, offset, start, totalBytes) {
+  async transferData(data, offset, start) {
     start = start || 0
     let end = Math.min(start + PACKET_SIZE, data.byteLength)
     let packet = data.slice(start, end)
 
     const buffer = new Buffer(packet)
 
-    this.log(`Writing data ${start}-${start+PACKET_SIZE}`)
+    if (start === 4080) {
+      this.log(`Writing from ${start} to ${end}`)
+    }
     await promiseTimeout(5000, writeCharacteristic(this.packetChar, buffer))
-    this.progress(offset+start + PACKET_SIZE, totalBytes)
+    if (start === 4080) {
+      this.log("Finished writing")
+    }
+    this.progress(offset + end)
 
     if (end < data.byteLength) {
-      return this.transferData(data, offset, end, totalBytes)
+      return this.transferData(data, offset, end)
     }
   }
 
