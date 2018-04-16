@@ -112,6 +112,12 @@ export class SecureDFU extends EventEmitter {
     if (!init) throw new Error("Init not specified")
     if (!firmware) throw new Error("Firmware not specified")
 
+    this.log(`Device state ${device.state}`)
+    if (device.state === "connected" || device.state === 'error') {
+      await new Promise(resolve => device.disconnect(() => resolve()))
+      this.log('Disconnected')
+    }
+
     this.state(STATES.CONNECTING)
     const disconnectWatcher = new Promise((resolve, reject) => {
       device.once("disconnect", error => {
@@ -175,9 +181,6 @@ export class SecureDFU extends EventEmitter {
 
   async gattConnect(device) {
     await new Promise(async (resolve, reject) => {
-      if (device.state === "connected") {
-        await new Promise(resolve => device.disconnect(() => resolve()))
-      }
       device.connect(error => {
         if (error) {
           this.log(`gattConnect: Error ${error}`)
@@ -187,6 +190,7 @@ export class SecureDFU extends EventEmitter {
         resolve(device)
       })
     })
+
     this.log("connected to gatt server")
     const service = await this.getDFUService(device).catch(() => {
       this.log("Unable to find DFU service")
