@@ -113,9 +113,9 @@ export class SecureDFU extends EventEmitter {
     if (!firmware) throw new Error("Firmware not specified")
 
     this.log(`Device state ${device.state}`)
-    if (device.state === "connected" || device.state === 'error') {
+    if (device.state === "connected" || device.state === "error") {
       await new Promise(resolve => device.disconnect(() => resolve()))
-      this.log('Disconnected')
+      this.log("Disconnected")
     }
 
     this.state(STATES.CONNECTING)
@@ -231,7 +231,7 @@ export class SecureDFU extends EventEmitter {
             resolve(services[i])
           }
         }
-        reject('DFU service not found')
+        reject("DFU service not found")
       })
     })
   }
@@ -349,8 +349,7 @@ export class SecureDFU extends EventEmitter {
           reject: reject,
         }
 
-        writeCharacteristic(characteristic, new Buffer(value), false)
-          .catch(err => reject(err))
+        writeCharacteristic(characteristic, new Buffer(value), false).catch(err => reject(err))
       })
     )
   }
@@ -641,8 +640,9 @@ function getCanonicalUUID(uuid) {
 }
 
 const isWindows = /^win32/.test(process.platform)
+const isLinux = /^linux/.test(process.platform)
 
-const defaultWithoutResponse = !isWindows
+const defaultWithoutResponse = !isWindows && !isLinux
 
 function writeCharacteristic(characteristic, buffer, withoutResponse = defaultWithoutResponse) {
   return new Promise((resolve, reject) => {
