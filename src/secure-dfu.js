@@ -97,11 +97,11 @@ export class SecureDFU extends EventEmitter {
     this.emit("stateChanged", { state })
   }
 
-  progress(bytes) {
+  progress(currentBytes, totalBytes) {
     this.emit("progress", {
       object: "unknown",
-      totalBytes: 0,
-      currentBytes: bytes,
+      totalBytes,
+      currentBytes,
     })
   }
 
@@ -418,7 +418,7 @@ export class SecureDFU extends EventEmitter {
         // Write Init data to the Packet Characteristic
         let data = buffer.slice(offset)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, offset)
+        await this.transferData(data, offset, 0, initPacketSizeInBytes)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -529,7 +529,7 @@ export class SecureDFU extends EventEmitter {
 
         let data = buffer.slice(writeStart, end)
         this.log(`transfering data starting with offset: ${offset}`)
-        await this.transferData(data, writeStart)
+        await this.transferData(data, writeStart, 0, imageSizeInBytes)
         this.log("transferred data")
 
         // Calculate Checksum
@@ -575,7 +575,7 @@ export class SecureDFU extends EventEmitter {
     }
     return true
   }
-  async transferData(data, offset, start) {
+  async transferData(data, offset, start, wholeSize) {
     start = start || 0
     let end = Math.min(start + PACKET_SIZE, data.byteLength)
     let packet = data.slice(start, end)
@@ -589,10 +589,10 @@ export class SecureDFU extends EventEmitter {
     if (start === 4080) {
       this.log("Finished writing")
     }
-    this.progress(offset + end)
+    this.progress(offset + start + PACKET_SIZE, wholeSize)
 
     if (end < data.byteLength) {
-      return this.transferData(data, offset, end)
+      return this.transferData(data, offset, end, wholeSize)
     }
   }
 
