@@ -2825,9 +2825,9 @@ next-tick@1:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/next-tick/-/next-tick-1.0.0.tgz#ca86d1fe8828169b0120208e3dc8424b9db8342c"
 
-noble@1.9.1:
-  version "1.9.1"
-  resolved "https://registry.yarnpkg.com/noble/-/noble-1.9.1.tgz#2ccd31ead8ec92dbff6f19a42e420b258bcdcdd0"
+noble@1.9.0:
+  version "1.9.0"
+  resolved "https://registry.yarnpkg.com/noble/-/noble-1.9.0.tgz#dccb9420ee2b155a051c4ec3368cff0588268962"
   dependencies:
     debug "~2.2.0"
   optionalDependencies:
