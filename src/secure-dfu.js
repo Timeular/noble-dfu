@@ -648,9 +648,19 @@ const defaultWithoutResponse = !isWindows && !isLinux
 
 function writeCharacteristic(characteristic, buffer, withoutResponse = defaultWithoutResponse) {
   return new Promise((resolve, reject) => {
-    characteristic.write(buffer, withoutResponse, error => {
-      if (error) return reject(error)
-      resolve()
-    })
+    if (withoutResponse) {
+      let id = setTimeout(() => {
+        clearTimeout(id)
+        characteristic.write(buffer, withoutResponse, error => {
+          if (error) return reject(error)
+          resolve()
+        })
+      }, 20)
+    } else {
+      characteristic.write(buffer, withoutResponse, error => {
+        if (error) return reject(error)
+        resolve()
+      })
+    }
   })
 }
