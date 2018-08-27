@@ -2825,9 +2825,9 @@ next-tick@1:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/next-tick/-/next-tick-1.0.0.tgz#ca86d1fe8828169b0120208e3dc8424b9db8342c"
 
-noble@1.9.0:
-  version "1.9.0"
-  resolved "https://registry.yarnpkg.com/noble/-/noble-1.9.0.tgz#dccb9420ee2b155a051c4ec3368cff0588268962"
+"noble@https://github.com/Timeular/noble#3fb1377c8570ccdf130db28cd4dba3c6d8ad6669":
+  version "1.9.1"
+  resolved "https://github.com/Timeular/noble#3fb1377c8570ccdf130db28cd4dba3c6d8ad6669"
   dependencies:
     debug "~2.2.0"
   optionalDependencies:
